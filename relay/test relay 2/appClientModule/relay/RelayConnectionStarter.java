@@ -39,6 +39,7 @@ public class RelayConnectionStarter {
             proxyHandlerThread.setPriority(Thread.MAX_PRIORITY);
             proxyHandlerThread.start();
         }catch (Exception e){
+            System.out.println("exception: " + e.toString());
             e.printStackTrace();
             System.exit(73);
         }
