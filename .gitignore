@@ -1,2 +1,7 @@
 .work/ 
 tmp/ 
+*.vs/
+**/out/
+*.user
+**/Debug/
+**/Release/
