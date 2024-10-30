@@ -95,21 +95,6 @@ public:
 		openRelayConnection();
 	}
 	static void openRelayConnection() {
-#if 0
-        SSLContext sslContext = SSLContext.getDefault();
-        SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
-        final SSLSocket socket = (SSLSocket) sslSocketFactory.createSocket();
-        socket.setReuseAddress(true);
-        socket.setTcpNoDelay(true);
-        socket.connect(new InetSocketAddress(relayIP, relayPort), 4000);
-        socket.setEnabledProtocols(new String[]{"TLSv1.2"});
-        socket.setEnabledCipherSuites(new String[]{
-                "TLS_RSA_WITH_AES_256_CBC_SHA",
-                "TLS_RSA_WITH_AES_128_CBC_SHA",
-                "TLS_RSA_WITH_AES_256_GCM_SHA384",
-                "TLS_RSA_WITH_AES_128_GCM_SHA256"
-        });
-#endif
 		int rv;
 		const SSL_METHOD* tls12_method = nullptr;
 		SSL_CTX* ctx = nullptr;
@@ -182,7 +167,11 @@ public:
 			rv = SSL_set_min_proto_version(ssl, TLS1_2_VERSION);
 			LOG_INFO("SSL_set_min_proto_version: %d", rv);
 
+			LOG_INFO("=> SSL_set_max_proto_version");
+			rv = SSL_set_max_proto_version(ssl, TLS1_2_VERSION); // TLS_MAX_VERSION
+			LOG_INFO("SSL_set_max_proto_version: %d", rv);
 
+#if 0
 			const char* cipher_suites[] = {
 				TLS1_RFC_RSA_WITH_AES_256_SHA,
 				TLS1_RFC_RSA_WITH_AES_128_SHA,
@@ -195,17 +184,49 @@ public:
 					strCipherSuites += ";";
 				strCipherSuites += suite;
 			}
-			LOG_INFO("=> SSL_set_ciphersuites");
+#endif
+			LOG_INFO("=> SSL_set_ciphersuites"); // SSL_set_ciphersuites or SSL_set_cipher_list ?
 			rv = SSL_set_ciphersuites(ssl, 
 #if 0
-				SSL_TXT_ALL
-#else
 				strCipherSuites.c_str()
+#else
+				TLS1_RFC_RSA_WITH_AES_256_SHA        ":"
+				TLS1_RFC_RSA_WITH_AES_128_SHA        ":"
+				TLS1_RFC_RSA_WITH_AES_256_GCM_SHA384 ":"
+				TLS1_RFC_RSA_WITH_AES_128_GCM_SHA256
 #endif
 			);
 			LOG_INFO("SSL_set_ciphersuites: %d", rv);
 
 			//	TODO? SSL_set_options
+
+#if 0
+#if 0
+			for(int priority = 0; ; ++priority) {
+				const char* cipher = SSL_get_cipher_list(ssl, priority);
+				if(cipher == nullptr) {
+					break;
+				}
+				LOG_INFO("SSL cipher[%d]: %s", priority, cipher);
+			}
+#else
+			LOG_INFO("SSL ciphers >>");
+			STACK_OF(SSL_CIPHER)* ciphers = SSL_get_ciphers(ssl);
+			if(ciphers != nullptr) {
+				int count = sk_SSL_CIPHER_num(ciphers);
+				if(count != -1) {
+					for(int c = 0; c < count; ++c) {
+						const SSL_CIPHER* cipher = sk_SSL_CIPHER_value(ciphers, c);
+						if(cipher != nullptr) {
+							const char* name = SSL_CIPHER_get_name(cipher);
+							LOG_INFO("SSL cipher[%d]: %s", c, name ? name : "N/A");
+						}
+					}
+				}
+			}
+			LOG_INFO("<< SSL ciphers");
+#endif
+#endif
 
 			LOG_INFO("=> SSL_set_fd");
 			rv = SSL_set_fd(ssl, (int)sockfd);
@@ -219,7 +240,7 @@ public:
 
 			//	read from relay
 #if 1
-			for(;;) {
+			for(;0 == 1;) {
 				char response[6] = { 0 };
 				int rv = recv(sockfd, response, sizeof(response), 0);
 				LOG_INFO("recv: %d", rv);
