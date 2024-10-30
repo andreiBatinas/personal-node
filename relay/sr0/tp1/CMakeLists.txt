@@ -4,53 +4,20 @@
 include(ExternalProject)
 
 # Add source to this project's executable.
-add_executable (tp1 "tp1.cpp" "tp1.h")
+add_executable (tp1 "tp1.cpp" "tp1.h" "logger.h" "logger.cpp" "sockets_runtime.h" "sockets_runtime.cpp" "scoped_destruct.h" "scoped_destruct.cpp" "ssl_runtime.cpp" "ssl_runtime.h" "relay_api.h" "relay_starter.cpp" "relay_api.cpp" "relay_starter.h")
 
 message(STATUS "CMAKE_VERSION: ${CMAKE_VERSION}")
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET tp1 PROPERTY CXX_STANDARD 20)
 endif()
 
-# OpenSSL NASM
-if(0)
-message(STATUS "CMAKE_CURRENT_BINARY_DIR: ${CMAKE_CURRENT_BINARY_DIR}")
-if (WIN32)
-  message(STATUS "Windows: true")
-  
-  project(nasm-download NONE)
-  set(BUILD_TOOLS_DIR ${CMAKE_CURRENT_BINARY_DIR}/build_tools)
-  set(NASM_VER "2.16.03")
-  if("${CMAKE_CACHEVAR_ARCHITECTURE}" STREQUAL "x64")
-    set(NASM_LINK "https://www.nasm.us/pub/nasm/releasebuilds/${NASM_VER}/win64/nasm-${NASM_VER}-win64.zip")
-  elseif("${CMAKE_CACHEVAR_ARCHITECTURE}" STREQUAL "x86")
-    set(NASM_LINK "https://www.nasm.us/pub/nasm/releasebuilds/${NASM_VER}/win32/nasm-${NASM_VER}-win32.zip")
-  endif()
-
-  file(DOWNLOAD ${NASM_LINK} ${BUILD_TOOLS_DIR}/nasm.zip)
-  execute_process(
-	  COMMAND ${CMAKE_COMMAND} -E tar xzf ${BUILD_TOOLS_DIR}/nasm.zip
-	  WORKING_DIRECTORY ${BUILD_TOOLS_DIR}
-  )
-
-  message(STATUS "[1] CMAKE_PROGRAM_PATH: ${CMAKE_PROGRAM_PATH}")
-
-  set(NASM_PATH "${BUILD_TOOLS_DIR}/nasm-${NASM_VER}/nasm.exe")
-  message(STATUS "NASM_PATH: ${NASM_PATH}")
-  # cmake_path(APPEND ${NASM_PATH})
-  LIST(APPEND CMAKE_PROGRAM_PATH ${NASM_PATH})
-
-  message(STATUS "[2] CMAKE_PROGRAM_PATH: ${CMAKE_PROGRAM_PATH}")
-endif()
-endif() #if 0
-
-
-#
-# Add tests and install targets if needed.
 #
 # OpenSSL
+#
 set(OPENSSL_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/openssl-src) # default path by CMake
 set(OPENSSL_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/openssl)
 set(OPENSSL_INCLUDE_DIR ${OPENSSL_INSTALL_DIR}/include)
+set(OPENSSL_LIB_DIR ${OPENSSL_INSTALL_DIR}/lib)
 
 # defaults
 set(OPENSSL_CONFIGURE_COMMAND perl ${OPENSSL_SOURCE_DIR}/config)
@@ -58,6 +25,9 @@ set(OPENSSL_MAKE make)
 message(STATUS "Check for Windows needing Configure instead of config")
 if (WIN32)
   message(STATUS "Windows: true")
+
+  set(OPENSSL_LIBRARY_SUFFIX "lib")
+
   # config does not work on Windows
   set(OPENSSL_CONFIGURE_COMMAND perl ${OPENSSL_SOURCE_DIR}/Configure)
   set(OPENSSL_OS_AND_COMPILER ) # default none for non-Windows platforms
@@ -82,6 +52,7 @@ endif()
 
 
 # get OpenSSL
+if(false)
 ExternalProject_Add(
   OpenSSL
   SOURCE_DIR ${OPENSSL_SOURCE_DIR}
@@ -96,6 +67,9 @@ ExternalProject_Add(
     --no-asm
     --no-hw
     --no-engine
+    --no-apps
+    --no-tests
+    --no-external-tests
     --verbose
     ${OPENSSL_OS_AND_COMPILER}
   BUILD_COMMAND ${OPENSSL_MAKE} /D
@@ -103,6 +77,7 @@ ExternalProject_Add(
   INSTALL_COMMAND ${OPENSSL_MAKE} install
   INSTALL_DIR ${OPENSSL_INSTALL_DIR}
 )
+endif()
 
 # We cannot use find_library because ExternalProject_Add() is performed at build time.
 # And to please the property INTERFACE_INCLUDE_DIRECTORIES,
@@ -118,3 +93,12 @@ add_library(OpenSSL::Crypto STATIC IMPORTED GLOBAL)
 set_property(TARGET OpenSSL::Crypto PROPERTY IMPORTED_LOCATION ${OPENSSL_INSTALL_DIR}/lib/libcrypto.${OPENSSL_LIBRARY_SUFFIX})
 set_property(TARGET OpenSSL::Crypto PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${OPENSSL_INCLUDE_DIR})
 add_dependencies(OpenSSL::Crypto OpenSSL)
+
+# Make sure it can be included
+message(STATUS "OPENSSL_INCLUDE_DIR: ${OPENSSL_INCLUDE_DIR}")
+
+target_include_directories(tp1 PRIVATE ${OPENSSL_INCLUDE_DIR})
+target_link_libraries(tp1 OpenSSL::Crypto OpenSSL::SSL)
+if (WIN32)
+target_link_libraries(tp1 OpenSSL::Crypto OpenSSL::SSL ws2_32)
+endif()
