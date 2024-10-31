@@ -130,7 +130,7 @@ public:
 			memset(&addr, 0, sizeof(addr));
 			addr.sin_family = AF_INET;
 			addr.sin_port = htons(relayPort);
-			LOG_INFO("=> inet_pton");
+			LOG_INFO("=> inet_pton: %s:%d", relayIP.c_str(), relayPort);
 			rv = inet_pton(AF_INET, relayIP.c_str(), &addr.sin_addr);
 			LOG_INFO("inet_pton: %d", rv);
 			
@@ -171,62 +171,16 @@ public:
 			rv = SSL_set_max_proto_version(ssl, TLS1_2_VERSION); // TLS_MAX_VERSION
 			LOG_INFO("SSL_set_max_proto_version: %d", rv);
 
-#if 0
-			const char* cipher_suites[] = {
-				TLS1_RFC_RSA_WITH_AES_256_SHA,
-				TLS1_RFC_RSA_WITH_AES_128_SHA,
-				TLS1_RFC_RSA_WITH_AES_256_GCM_SHA384,
-				TLS1_RFC_RSA_WITH_AES_128_GCM_SHA256
-			};
-			std::string strCipherSuites = "";
-			for (const auto& suite : cipher_suites) {
-				if (!strCipherSuites.empty())
-					strCipherSuites += ";";
-				strCipherSuites += suite;
-			}
-#endif
-			LOG_INFO("=> SSL_set_ciphersuites"); // SSL_set_ciphersuites or SSL_set_cipher_list ?
+			LOG_INFO("=> SSL_set_ciphersuites");
 			rv = SSL_set_ciphersuites(ssl, 
-#if 0
-				strCipherSuites.c_str()
-#else
 				TLS1_RFC_RSA_WITH_AES_256_SHA        ":"
 				TLS1_RFC_RSA_WITH_AES_128_SHA        ":"
 				TLS1_RFC_RSA_WITH_AES_256_GCM_SHA384 ":"
 				TLS1_RFC_RSA_WITH_AES_128_GCM_SHA256
-#endif
 			);
 			LOG_INFO("SSL_set_ciphersuites: %d", rv);
 
-			//	TODO? SSL_set_options
-
-#if 0
-#if 0
-			for(int priority = 0; ; ++priority) {
-				const char* cipher = SSL_get_cipher_list(ssl, priority);
-				if(cipher == nullptr) {
-					break;
-				}
-				LOG_INFO("SSL cipher[%d]: %s", priority, cipher);
-			}
-#else
-			LOG_INFO("SSL ciphers >>");
-			STACK_OF(SSL_CIPHER)* ciphers = SSL_get_ciphers(ssl);
-			if(ciphers != nullptr) {
-				int count = sk_SSL_CIPHER_num(ciphers);
-				if(count != -1) {
-					for(int c = 0; c < count; ++c) {
-						const SSL_CIPHER* cipher = sk_SSL_CIPHER_value(ciphers, c);
-						if(cipher != nullptr) {
-							const char* name = SSL_CIPHER_get_name(cipher);
-							LOG_INFO("SSL cipher[%d]: %s", c, name ? name : "N/A");
-						}
-					}
-				}
-			}
-			LOG_INFO("<< SSL ciphers");
-#endif
-#endif
+			//	TODO SSL_set_options ?
 
 			LOG_INFO("=> SSL_set_fd");
 			rv = SSL_set_fd(ssl, (int)sockfd);
@@ -237,198 +191,20 @@ public:
 			LOG_INFO("SSL_connect: %d", rv);
 
 			//	TODO starts thread to read from servers and send to the relay
-
-			//	read from relay
-#if 1
-			for(;0 == 1;) {
-				char response[6] = { 0 };
-				int rv = recv(sockfd, response, sizeof(response), 0);
-				LOG_INFO("recv: %d", rv);
-				if(rv > 0) {
-					for(int c = 0; c < rv; c++) {
-						fprintf(stdout, "%c", response[c]);
-					}
-					fprintf(stdout, "\n");
-					for(int c = 0; c < rv; c++) {
-						fprintf(stdout, "%2.2x", response[c]);
-					}
-					fprintf(stdout, "\n");
-				}
-				else if(rv < 0)
-					break;
+			std::thread tlsThread = std::move(
+				std::thread([&]() -> void {
+					RunTlsIO(ssl, RelayConnectionStarter::sockfd);
+					}));
+			LOG_INFO("[" __FUNCTION__ "] => tlsThread: %p", tlsThread.native_handle());
+			if(tlsThread.native_handle() == nullptr) {
+				rv = -ENOEXEC;
+				LOG_INFO("[" __FUNCTION__ "] => tlsThread_ fail: %d", errno);
 			}
-#else
-			for(;;) {
-				char response[6] = { 0 };
-				//LOG_INFO("=> SSL_read");
-				rv = SSL_read(ssl, response, 6);
-				LOG_INFO("SSL_read: %d", rv);
-				if(rv > 0) {
-					for(int c = 0; c < rv; c++) {
-						fprintf(stdout, "%c", response[c]);
-					}
-					fprintf(stdout, "\n");
-					for(int c = 0; c < rv; c++) {
-						fprintf(stdout, "%2.2x", response[c]);
-					}
-					fprintf(stdout, "\n");
-				}
-				else {
-					bool disconnected = false;
-
-					int err = SSL_get_error(ssl, rv);
-					switch(err) {
-						case SSL_ERROR_NONE:
-							LOG_INFO("SSL_get_error: SSL_ERROR_NONE: continue");
-							continue;
-						case SSL_ERROR_SSL:
-							LOG_INFO("SSL_get_error: SSL_ERROR_SSL");
-							break;
-						case SSL_ERROR_ZERO_RETURN:
-							LOG_INFO("SSL_get_error: SSL_ERROR_ZERO_RETURN: disconnected: break");
-							disconnected = true;
-							break;
-						case SSL_ERROR_WANT_READ:
-							LOG_INFO("SSL_get_error: SSL_ERROR_WANT_READ");
-							{
-								int sock = SSL_get_rfd(ssl);
-								fd_set fds;
-								FD_ZERO(&fds);
-								FD_SET(sock, &fds);
-								timeval timeout;
-								timeout.tv_sec = 0;
-								timeout.tv_usec = 500 * 1000;
-
-								err = select(sock + 1, &fds, nullptr, nullptr, &timeout);
-								if(err > 0) {
-									continue;
-								}
-								else if(err == 0) {
-									//	timeout
-									continue;
-								}
-								else {
-									//	error
-									disconnected = true;
-									break;
-								}
-							}
-							break;
-						case SSL_ERROR_WANT_WRITE:
-							LOG_INFO("SSL_get_error: SSL_ERROR_WANT_WRITE");
-							{
-								int sock = SSL_get_rfd(ssl);
-								fd_set fds;
-								FD_ZERO(&fds);
-								FD_SET(sock, &fds);
-								timeval timeout;
-								timeout.tv_sec = 0;
-								timeout.tv_usec = 500 * 1000;
-
-								err = select(sock + 1, &fds, nullptr, nullptr, &timeout);
-								if(err > 0) {
-									continue;
-								}
-								else if(err == 0) {
-									//	timeout
-									continue;
-								}
-								else {
-									//	error
-									disconnected = true;
-									break;
-								}
-							}
-							break;
-
-						default:
-							break;
-					}
-
-					if(disconnected)
-						break;
-				}
-
-				LOG_INFO("read loop done");
+			else {
+				LOG_INFO("[" __FUNCTION__ "] => %s", "tlsThread_.join()");
+				tlsThread.join();
+				LOG_INFO("[" __FUNCTION__ "] => %s done", "tlsThread_.join()");
 			}
-#endif
-
-			// SSL_set_fd(ssl)
-
-#if 0
-			long timeout = 5;
-			LOG_INFO("=> SSL_CTX_set_timeout: %ld seconds", timeout);
-			SSL_CTX_set_timeout(ctx, 5);
-			LOG_INFO("SSL_CTX_set_timeout: %d", rv);
-
-			LOG_INFO("=> BIO_new_ssl_connect");
-			bio = BIO_new_ssl_connect(ctx);
-			LOG_INFO("BIO_new_ssl_connect: bio:%p", bio);
-
-			LOG_INFO("=> BIO_get_ssl");
-			rv = BIO_get_ssl(bio, &ssl);
-			LOG_INFO("BIO_get_ssl => %d: ssl:%p", rv, ssl);
-
-			LOG_INFO("=> SSL_set_mode SSL_MODE_AUTO_RETRY");
-			rv = SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY);
-			LOG_INFO("SSL_set_mode SSL_MODE_AUTO_RETRY => %d", rv);
-
-			//LOG_INFO("=> SSL_set_mode SSL_MODE_ASYNC");
-			//rv = SSL_set_mode(ssl, SSL_MODE_ASYNC);
-			//LOG_INFO("SSL_set_mode SSL_MODE_ASYNC => %d", rv);
-
-			char endpoint[256] = {0};
-			snprintf(endpoint, sizeof(endpoint), "%s:%d", relayIP.c_str(), relayPort);
-			LOG_INFO("=> BIO_set_conn_hostname: endpoint: %s", endpoint);
-			BIO_set_conn_hostname(bio, endpoint);
-
-			LOG_INFO("=> BIO_do_connect");
-			rv = BIO_do_connect(bio);
-			LOG_INFO("BIO_do_connect => %d", rv);
-
-			LOG_INFO("=> SSL_get_verify_result");
-			long verify_flag = SSL_get_verify_result(ssl);
-			const char* vferr = X509_verify_cert_error_string(verify_flag);
-			LOG_INFO("SSL_get_verify_result => %ld:%s", verify_flag, vferr ? vferr : "N/A");
-
-			//	sample request
-#if 0
-			LOG_INFO("=> BIO_puts");
-			char request[512] = {0};
-			snprintf(request, sizeof(request),
-				"GET / HTTP/1.1\r\n"
-				"Host: %s\r\n"
-				"Connection: Close\r\n"
-				"\r\n",
-				relayIP.c_str()
-			);
-			rv = BIO_puts(bio, request);
-			LOG_INFO("BIO_puts => %d", rv);
-
-			//	response
-			for(;;) {
-				LOG_INFO("=> BIO_read");
-				char response[512] = {0};
-				rv = BIO_read(bio, response, sizeof(response));
-				LOG_INFO("BIO_read: %d", rv);
-				if(rv <= 0)
-					break;
-				if(rv < sizeof(response))
-					response[rv] = '\0';
-				LOG_INFO("BIO_read: %s", response);
-			}
-#endif
-			//	read from relay
-			LOG_INFO("=> BIO_read");
-			char response[6] = {0};
-			rv = BIO_read(bio, response, sizeof(response));
-			LOG_INFO("BIO_read: %d", rv);
-			LOG_INFO("BIO_read: %2.2x%2.2x%2.2x%2.2x%2.2x%2.2x",
-				response[0], response[1], response[2],
-				response[3], response[4], response[5]);
-
-#endif
-
 		} while(0);
 
 		//	cleanup
@@ -442,9 +218,6 @@ public:
 		LOG_INFO("=> SSL_CTX_free: ctx:%p", ctx);
 		if(ctx != nullptr)
 			SSL_CTX_free(ctx);
-		//LOG_INFO("=> BIO_free_all: bio:%p", bio);
-		//if(bio != nullptr)
-		//	BIO_free_all(bio);
 
 		LOG_INFO("=> EVP_cleanup");
 		EVP_cleanup();
@@ -454,6 +227,90 @@ public:
 		LOG_INFO("WSACleanup: %d");
 
 		LOG_INFO("DONE");
+	}
+
+	static void RunTlsIO(SSL* ssl, SOCKET sockfd) {
+		PROFILE();
+
+		//	TODO starts thread that reads data from the destination servers and sends it back to the relay
+
+		//	read from relay
+		int end_loop = 0;
+		for(; end_loop == 0; ) {
+			//	readFromRelay()
+			do {
+				//	1. session ID: 6 bytes
+#define BUFSIZ_SESSION (6)
+				unsigned char session[BUFSIZ_SESSION] = {0};
+				memset(&session[0], 0, sizeof(session));
+				int received = SSL_read(ssl, &session[0], BUFSIZ_SESSION);
+				LOG_INFO("received: %d", received);
+				if(received != BUFSIZ_SESSION) {
+					LOG_INFO("session: invalid packet or connection closed");
+					end_loop = 1;
+					break;
+				}
+
+				//	6 bytes
+				//		4 bytes [0..3] IPv4 address
+				//		2 bytes [4..5] port
+				unsigned char address[4] = {0};
+				memcpy(&address[0], &session[0], 4);
+				unsigned short port = ((session[4] & 0xFF) << 8) | (session[5] & 0xFF);
+				LOG_INFO("[%u.%u.%u.%u:%u] received packet",
+					address[0], address[1], address[2], address[3],
+					port);
+
+				//	2. data length: 2 bytes
+#define BUFSIZ_DATA_LENGTH (2)
+				unsigned char lengthBytes[BUFSIZ_DATA_LENGTH] = {0};
+				memset(&lengthBytes[0], 0, sizeof(lengthBytes));
+				received = SSL_read(ssl, &lengthBytes[0], BUFSIZ_DATA_LENGTH);
+				LOG_INFO("received: %d", received);
+				// memcpy(&address[0], &buffer[6], 2);
+				int payloadLength =
+					(((lengthBytes[0] & 0xFF) << 8) |
+					 (lengthBytes[1] & 0xFF)
+					) & 0xFFFF;
+				LOG_INFO("data length: %d", payloadLength);
+
+				if(payloadLength <= 0) {
+					//	close (0) or invalid (< 0) packet length
+					//	SOCKS client closed relay connection, or an invalid packet got
+					//	TODO: close remoteID and bail out
+					if(payloadLength == 0) {
+						LOG_INFO("TODO: close connection with ID %u.%u.%u.%u:%u",
+							address[0], address[1], address[2], address[3],
+							port);
+					}
+					else {
+						LOG_INFO("TODO: close connection with ID %u.%u.%u.%u:%u => and bail out due to invalid packet",
+							address[0], address[1], address[2], address[3],
+							port);
+						if(payloadLength < 0) {
+							//	invalid packet length; bail out
+							end_loop = 1;
+						}
+					}
+
+					continue;
+				}
+
+				//	3. read data of payloadLength
+				std::vector<unsigned char> data(payloadLength);
+				received = SSL_read(ssl, &data[0], payloadLength);
+				LOG_INFO("received: %d", received);
+				if(received > 0) {
+					std::string strData;
+					for(int c = 0; c < received; c++) {
+						strData += static_cast<char>(data[c]);
+					}
+					LOG_INFO("data: %s", strData.c_str());
+				}
+
+				//	get or create the remoteID session
+			} while(0);
+		}
 	}
 };
 int RelayConnectionStarter::relayPort = -1;

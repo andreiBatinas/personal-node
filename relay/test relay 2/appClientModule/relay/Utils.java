@@ -33,7 +33,7 @@ public final class Utils {
     }
 
     public static String extractRemoteID(byte[] idBytes) {
-        return extractIPAddress(idBytes) + extractPort(idBytes);
+        return extractIPAddress(idBytes) + ":" + extractPort(idBytes);
     }
 
     // Extracts the IP address from the 4 bytes format
