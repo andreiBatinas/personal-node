@@ -1,5 +1,7 @@
 #pragma once
 
+#if 0
+
 #include <string>
 #include <thread>
 #include "sockets_runtime.h"
@@ -35,3 +37,5 @@ public:
 	void RunTlsIO();
 	int run();
 };
+
+#endif

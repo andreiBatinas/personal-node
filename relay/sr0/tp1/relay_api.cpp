@@ -2,6 +2,8 @@
 #include "relay_starter.h"
 #include <memory>
 
+#if 0
+
 //
 //	C-like API interface
 //
@@ -69,3 +71,5 @@ int RelayConnection_Destroy(
 	relayer->Handle = nullptr;
 	return 0;
 }
+
+#endif

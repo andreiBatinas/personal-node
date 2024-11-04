@@ -1,5 +1,7 @@
 #include "relay_starter.h"
 
+#if 0
+
 #include <cassert>
 #include "logger.h"
 #include "scoped_destruct.h"
@@ -381,7 +383,7 @@ bool RelayConnectionStarter::connectSocket() {
 		}
 
 		//	create connection socket
-		struct addrinfo hint = { 0 };
+		struct addrinfo hint = {0};
 		memset(&hint, 0, sizeof(hint));
 		hint.ai_family = AF_UNSPEC;
 		hint.ai_socktype = SOCK_STREAM;
@@ -439,3 +441,5 @@ bool RelayConnectionStarter::connectSocket() {
 void RelayConnectionStarter::RunTlsIO() {
 	// auto relayer = std::enable_shared_from_this();
 }
+
+#endif

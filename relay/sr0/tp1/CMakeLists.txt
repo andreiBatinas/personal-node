@@ -4,7 +4,7 @@
 include(ExternalProject)
 
 # Add source to this project's executable.
-add_executable (tp1 "tp1.cpp" "tp1.h" "logger.h" "logger.cpp" "sockets_runtime.h" "sockets_runtime.cpp" "scoped_destruct.h" "scoped_destruct.cpp" "ssl_runtime.cpp" "ssl_runtime.h" "relay_api.h" "relay_starter.cpp" "relay_api.cpp" "relay_starter.h")
+add_executable (tp1 "tp1.cpp" "tp1.h" "logger.h" "logger.cpp" "sockets_runtime.h" "sockets_runtime.cpp" "scoped_destruct.h" "scoped_destruct.cpp" "ssl_runtime.cpp" "ssl_runtime.h" "relay_api.h" "relay_starter.cpp" "relay_api.cpp" "relay_starter.h" "utils.cpp" "utils.h" "socket.h" "socket.cpp" "ssl_connection.h" "ssl_connection.cpp")
 
 message(STATUS "CMAKE_VERSION: ${CMAKE_VERSION}")
 if (CMAKE_VERSION VERSION_GREATER 3.12)

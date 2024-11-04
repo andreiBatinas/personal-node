@@ -1,5 +1,7 @@
 #pragma once
 
+#if 0
+
 struct relay_connection_t {
 	int ObjectID;
 	void* Handle;
@@ -15,3 +17,5 @@ int RelayConnection_Stop(
 	struct relay_connection_t* relayer);
 int RelayConnection_Destroy(
 	struct relay_connection_t* relayer);
+
+#endif
