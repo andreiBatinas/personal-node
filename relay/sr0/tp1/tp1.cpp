@@ -109,7 +109,7 @@ public:
 			WSADATA wsa = {0};
 			LOG_INFO("=> WSAStartup");
 			rv = WSAStartup(MAKEWORD(2, 2), &wsa);
-			LOG_INFO("WSAStartup: %d");
+			LOG_INFO("WSAStartup: %d", rv);
 
 			//	plain socket
 			LOG_INFO("=> socket");
