@@ -2,6 +2,7 @@
 
 #include <mutex>
 #include "openssl/ssl.h"
+#include "openssl/err.h"
 
 class SSLRuntime {
 private:

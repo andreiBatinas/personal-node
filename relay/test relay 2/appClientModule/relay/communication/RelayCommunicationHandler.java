@@ -126,6 +126,7 @@ public class RelayCommunicationHandler implements Runnable {
                 System.err.println("[" + remoteID + "]" + " failed to read the full data or connection closed");
                 throw new RelayIOException("Could not read the data bytes from the relay");
             }
+            System.out.println("data:[" + data.toString() + "]");
 
             if (connectionsMapper.containsKey(remoteID)) {
                 /* EXISTING SESSION
