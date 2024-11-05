@@ -46,15 +46,16 @@ if (WIN32)
   endif()
 else()
   message(STATUS "Win32: false")
+
+  set(OPENSSL_LIBRARY_SUFFIX "so")
+
   set(OPENSSL_CONFIGURE_COMMAND perl ${OPENSSL_SOURCE_DIR}/config)
   set(OPENSSL_MAKE make)
 endif()
 
 
 # get OpenSSL
-if(false)
-ExternalProject_Add(
-  OpenSSL
+ExternalProject_Add(openssl
   SOURCE_DIR ${OPENSSL_SOURCE_DIR}
   GIT_REPOSITORY https://github.com/openssl/openssl.git
   GIT_TAG OpenSSL_1_1_1n
@@ -71,34 +72,32 @@ ExternalProject_Add(
     --no-tests
     --no-external-tests
     --verbose
-    ${OPENSSL_OS_AND_COMPILER}
-  BUILD_COMMAND ${OPENSSL_MAKE} /D
-  TEST_COMMAND ""
-  INSTALL_COMMAND ${OPENSSL_MAKE} install
-  INSTALL_DIR ${OPENSSL_INSTALL_DIR}
+    ${OPENSSL_OS_AND_COMPILER} 
+  BUILD_COMMAND ${OPENSSL_MAKE} /D 
+  TEST_COMMAND "" 
+  INSTALL_COMMAND ${OPENSSL_MAKE} install 
+  INSTALL_DIR ${OPENSSL_INSTALL_DIR} 
+  BUILD_BYPRODUCTS ${OPENSSL_INSTALL_DIR}/lib/libssl.${OPENSSL_LIBRARY_SUFFIX} ${OPENSSL_INSTALL_DIR}/lib/libcrypto.${OPENSSL_LIBRARY_SUFFIX}
 )
-endif()
+
+add_library(libssl STATIC IMPORTED GLOBAL)
+set_property(TARGET libssl PROPERTY IMPORTED_LOCATION ${OPENSSL_INSTALL_DIR}/lib/libssl.${OPENSSL_LIBRARY_SUFFIX})
+add_dependencies(libssl openssl)
+
+add_library(libcrypto STATIC IMPORTED GLOBAL)
+set_property(TARGET libcrypto PROPERTY IMPORTED_LOCATION ${OPENSSL_INSTALL_DIR}/lib/libcrypto.${OPENSSL_LIBRARY_SUFFIX})
+add_dependencies(libcrypto openssl)
 
 # We cannot use find_library because ExternalProject_Add() is performed at build time.
 # And to please the property INTERFACE_INCLUDE_DIRECTORIES,
 # we make the include directory in advance.
 file(MAKE_DIRECTORY ${OPENSSL_INCLUDE_DIR})
 
-add_library(OpenSSL::SSL STATIC IMPORTED GLOBAL)
-set_property(TARGET OpenSSL::SSL PROPERTY IMPORTED_LOCATION ${OPENSSL_INSTALL_DIR}/lib/libssl.${OPENSSL_LIBRARY_SUFFIX})
-set_property(TARGET OpenSSL::SSL PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${OPENSSL_INCLUDE_DIR})
-add_dependencies(OpenSSL::SSL OpenSSL)
-
-add_library(OpenSSL::Crypto STATIC IMPORTED GLOBAL)
-set_property(TARGET OpenSSL::Crypto PROPERTY IMPORTED_LOCATION ${OPENSSL_INSTALL_DIR}/lib/libcrypto.${OPENSSL_LIBRARY_SUFFIX})
-set_property(TARGET OpenSSL::Crypto PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${OPENSSL_INCLUDE_DIR})
-add_dependencies(OpenSSL::Crypto OpenSSL)
-
 # Make sure it can be included
 message(STATUS "OPENSSL_INCLUDE_DIR: ${OPENSSL_INCLUDE_DIR}")
 
 target_include_directories(tp1 PRIVATE ${OPENSSL_INCLUDE_DIR})
-target_link_libraries(tp1 OpenSSL::Crypto OpenSSL::SSL)
+target_link_libraries(tp1 libcrypto libssl)
 if (WIN32)
-target_link_libraries(tp1 OpenSSL::Crypto OpenSSL::SSL ws2_32)
+target_link_libraries(tp1 libcrypto libssl ws2_32)
 endif()

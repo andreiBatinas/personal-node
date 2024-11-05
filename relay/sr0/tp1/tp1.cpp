@@ -133,7 +133,7 @@ public:
 		LOG_INFO("DONE");
 	}
 
-	static void RunTlsIO(const SSLConnection& ssl_connection, SOCKET sockfd) {
+	static void RunTlsIO(const SSLConnection& ssl_connection, const Socket& sockfd) {
 		PROFILE();
 
 		//	TODO starts thread that reads data from the destination servers and sends it back to the relay
@@ -255,6 +255,8 @@ void test() {
 int main(int argc, char** argv) {
 	PROFILE();
 
+#ifdef WIN32
+#ifdef _DEBUG
 	bool break_on_start = false;
 	for(int c = 1; c < argc; ++c) {
 		if(strstr(argv[c], "--break-on-startup")) {
@@ -266,6 +268,8 @@ int main(int argc, char** argv) {
 		while(!IsDebuggerPresent())
 			;
 	}
+#endif // _DEBUG
+#endif // WIN32
 
 	// tests::_1::test();
 	tests::_2::test();

@@ -19,7 +19,7 @@
         },
         {
             "name": "x64-debug",
-            "displayName": "x64 Debug",
+            "displayName": "Debug|x64",
             "inherits": "windows-base",
             "architecture": {
                 "value": "x64",
@@ -32,7 +32,7 @@
         },
         {
             "name": "x64-release",
-            "displayName": "x64 Release",
+            "displayName": "Release|x64",
             "inherits": "x64-debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
@@ -41,7 +41,7 @@
         },
         {
             "name": "x86-debug",
-            "displayName": "x86 Debug",
+            "displayName": "Debug|x86",
             "inherits": "windows-base",
             "architecture": {
                 "value": "x86",
@@ -54,7 +54,7 @@
         },
         {
             "name": "x86-release",
-            "displayName": "x86 Release",
+            "displayName": "Release|x86",
             "inherits": "x86-debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
