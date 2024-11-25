@@ -28,9 +28,8 @@ int Relay_Init(
 	uint32_t flags) {
 	PROFILE();
 
-	//if(g_hostApp != nullptr) {
+	if(g_hostApp != nullptr)
 		g_hostApp->log(g_hostApp, logger::LVL_TRACE, "=> Relay_Init");
-	//}
 
 	int rv = 0;
 	do {
@@ -67,7 +66,8 @@ int Relay_Init(
 		if(need_ssl) {
 			//	init SSL runtime
 			rv = SSLRuntime::init();
-			LOG_TRACE("SSLRuntime::init() => %d", rv);
+			if(g_hostApp != nullptr)
+				g_hostApp->trace(g_hostApp, "SSLRuntime::init() => %d", rv);
 			if(rv != 0) {
 				break;
 			}
@@ -76,9 +76,8 @@ int Relay_Init(
 		rv = 0;
 	} while(0);
 
-	//if(g_hostApp != nullptr) {
+	if(g_hostApp != nullptr)
 		g_hostApp->log(g_hostApp, logger::LVL_TRACE, "Relay_Init: %d", rv);
-	//}
 	return rv;
 }
 
@@ -89,12 +88,14 @@ int Relay_Shutdown(
 	uint32_t flags = g_InitFlags.exchange(RELAY_INIT_FLAG_NOT_INIT);
 
 	if(flags & RELAY_INIT_FLAG_SSL) {
-		LOG_TRACE("=> SSLRuntime::uninit()");
+		if(g_hostApp != nullptr)
+			g_hostApp->trace(g_hostApp, "=> SSLRuntime::uninit()");
 		SSLRuntime::uninit();
 	}
 
 	if(flags & RELAY_INIT_FLAG_SOCKETS) {
-		LOG_TRACE("=> SocketsRuntime::uninit()");
+		if(g_hostApp != nullptr)
+			g_hostApp->trace(g_hostApp, "=> SocketsRuntime::uninit()");
 		SocketsRuntime::uninit();
 	}
 
@@ -102,6 +103,9 @@ int Relay_Shutdown(
 }
 
 int Relay_SetHostApp(struct relay_host_application_t* host) {
+	if(g_hostApp != nullptr)
+		g_hostApp->trace(g_hostApp, "=> Relay_SetHostApp");
+
 	std::lock_guard<std::mutex> lock(g_mtxApp);
 	if(g_hostApp != nullptr)
 		g_hostApp->release(g_hostApp);
@@ -111,9 +115,8 @@ int Relay_SetHostApp(struct relay_host_application_t* host) {
 		g_hostApp->addRef(g_hostApp);
 	}
 
-	if(g_hostApp != nullptr) {
-		g_hostApp->log(g_hostApp, logger::LVL_TRACE, "Relay_SetHostApp: %d", 0);
-	}
+	if(g_hostApp != nullptr)
+		g_hostApp->trace(g_hostApp, "Relay_SetHostApp: %d", 0);
 
 	return 0;
 }
@@ -124,7 +127,8 @@ int RelayConnection_Create(
 	int relayPort) {
 	PROFILE();
 
-	g_hostApp->log(g_hostApp, logger::LVL_TRACE, "=> RelayConnection_Create");
+	if(g_hostApp != nullptr)
+		g_hostApp->trace(g_hostApp, "=> RelayConnection_Create");
 
 	int rv = 0;
 	do {
@@ -180,7 +184,8 @@ int RelayConnection_Create(
 		rv = 0;
 	} while(0);
 
-	g_hostApp->log(g_hostApp, logger::LVL_TRACE, "RelayConnection_Create: %d", rv);
+	if(g_hostApp != nullptr)
+		g_hostApp->trace(g_hostApp, "RelayConnection_Create: %d", rv);
 	return rv;
 }
 
@@ -188,7 +193,8 @@ int RelayConnection_Start(
 	relay_connection_t* relay) {
 	PROFILE();
 
-	g_hostApp->log(g_hostApp, logger::LVL_TRACE, "=> RelayConnection_Start");
+	if(g_hostApp != nullptr)
+		g_hostApp->trace(g_hostApp, "=> RelayConnection_Start");
 
 	int rv = 0;
 	do {
@@ -211,7 +217,8 @@ int RelayConnection_Start(
 		rv = -EINVAL;
 	} while(0);
 
-	g_hostApp->log(g_hostApp, logger::LVL_TRACE, "RelayConnection_Start: %d", rv);
+	if(g_hostApp != nullptr)
+		g_hostApp->trace(g_hostApp, "RelayConnection_Start: %d", rv);
 	return rv;
 }
 
@@ -219,7 +226,8 @@ int RelayConnection_Stop(
 	relay_connection_t* relay) {
 	PROFILE();
 
-	g_hostApp->log(g_hostApp, logger::LVL_TRACE, "=> RelayConnection_Stop");
+	if(g_hostApp != nullptr)
+		g_hostApp->trace(g_hostApp, "=> RelayConnection_Stop");
 
 	int rv = 0;
 	do {
@@ -242,7 +250,8 @@ int RelayConnection_Stop(
 		rv = -EINVAL;
 	} while(0);
 
-	g_hostApp->log(g_hostApp, logger::LVL_TRACE, "RelayConnection_Stop: %d", rv);
+	if(g_hostApp != nullptr)
+		g_hostApp->trace(g_hostApp, "RelayConnection_Stop: %d", rv);
 	return rv;
 }
 
@@ -250,11 +259,12 @@ int RelayConnection_Destroy(
 	relay_connection_t* relay) {
 	PROFILE();
 
+	if(g_hostApp != nullptr)
+		g_hostApp->trace(g_hostApp, "=> RelayConnection_Destroy");
+
 	if(relay == nullptr) {
-		//	LOG_TRACE("relay is nullptr");
-		if(g_hostApp != nullptr) {
-			g_hostApp->log(g_hostApp, logger::LVL_TRACE, "relay is nullptr");
-		}
+		if(g_hostApp != nullptr)
+			g_hostApp->trace(g_hostApp, "relay is nullptr");
 		return -ENOENT;
 	}
 	
@@ -284,5 +294,7 @@ int RelayConnection_Destroy(
 		rv = -EINVAL;
 	} while(0);
 
+	if(g_hostApp != nullptr)
+		g_hostApp->trace(g_hostApp, "RelayConnection_Destroy: %d", rv);
 	return rv;
 }

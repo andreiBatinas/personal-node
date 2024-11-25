@@ -12,6 +12,7 @@
 
 #include "openssl/ssl.h"
 #include "openssl/err.h"
+#include "event.h"
 #include "logger.h"
 #include "scoped_destruct.h"
 #include "socket.h"
@@ -19,64 +20,11 @@
 #include "ssl_connection.h"
 #include "ssl_runtime.h"
 #include "utils.h"
-
 #include "relay_api.h"
-
-namespace os {
-class event_t {
-private:
-	HANDLE h_ = nullptr;
-public:
-	event_t() {
-	}
-	~event_t() {
-		close();
-	}
-private:
-	event_t(const event_t&) = delete;
-	event_t(event_t&&) = delete;
-	event_t& operator=(const event_t&) = delete;
-	event_t&& operator=(event_t&&) = delete;
-public:
-	operator bool() const {
-		return is_open();
-	}
-	bool operator !() const {
-		return !is_open();
-	}
-	operator HANDLE() {
-		return h_;
-	}
-	HANDLE* operator&() {
-		return &h_;
-	}
-	bool is_open() const {
-		return h_ != nullptr;
-	}
-	bool create() {
-		assert(h_ == nullptr);
-		if(is_open())
-			return false;
-		h_ = CreateEventA(nullptr, FALSE, FALSE, nullptr);
-		return h_ != nullptr;
-	}
-	void close() {
-		HANDLE h = std::move(h_);
-		if(h != nullptr)
-			CloseHandle(h);
-	}
-	bool set() {
-		if(!is_open())
-			return false;
-		return !!::SetEvent(h_);
-	}
-};
-} // namespace os
 
 namespace tests {
 
 namespace _2 {
-
 
 class RelayConnectionStarter {
 private:
@@ -275,17 +223,19 @@ std::string RelayConnectionStarter::relayIP = "";
 Socket RelayConnectionStarter::sockfd;
 
 #ifdef WIN32
-static os::event_t g_evConsoleCtrlC;
-
 struct console_handler_t {
 private:
 	static console_handler_t* self_;
+	os::event_t evConsoleCtrlC_;
+
 private:
 	console_handler_t() {
+		evConsoleCtrlC_.create();
 		SetConsoleCtrlHandler(console_handler_t::Handler, TRUE);
 	}
 	~console_handler_t() {
 		SetConsoleCtrlHandler(console_handler_t::Handler, FALSE);
+		evConsoleCtrlC_.close();
 	}
 	static BOOL WINAPI Handler(DWORD CtrlType) {
 		switch(CtrlType) {
@@ -294,7 +244,7 @@ private:
 			case CTRL_CLOSE_EVENT:
 			case CTRL_LOGOFF_EVENT:
 			case CTRL_SHUTDOWN_EVENT:
-				g_evConsoleCtrlC.set();
+				console_handler_t::self_->evConsoleCtrlC_.set();
 				RelayConnectionStarter::shutdown();
 				return TRUE;
 			default:
@@ -312,6 +262,11 @@ public:
 			delete self_;
 			self_ = nullptr;
 		}
+	}
+	static HANDLE ConsoleCtrlCEvent() {
+		if(console_handler_t::self_ == nullptr)
+			return nullptr;
+		return console_handler_t::self_->evConsoleCtrlC_;
 	}
 	static bool ConsoleStopRequested(HANDLE hStdin) {
 		bool stop_requested = false;
@@ -510,7 +465,6 @@ void test(int argc, char** argv) {
 	HostApp::check_break_on_startup(argc, argv);
 
 #ifdef WIN32
-	g_evConsoleCtrlC.create();
 	scoped_console_handler_t console_handler;
 #endif
 
@@ -521,47 +475,20 @@ void test(int argc, char** argv) {
 	RelayConnectionStarter::init(relayIP, relayPort);
 #else
 
-#if 0
-	struct HostApp : public relay_host_application_t {
-	private:
-		std::atomic<int> ref_;
-
-	public:
-		int addRef() {
-			return ++ref_;
-		}
-		int release() {
-			return --ref_;
-		}
-		void log(logger::LEVEL level, const char* fmt, ...) {
-			va_list ap;
-			va_start(ap, fmt);
-			logger::vlog(level, fmt, ap);
-			va_end(ap);
-		}
-	} tester;
-#endif // #if 0
-
 	int rv = 0;
 	do {
 		LOG_TRACE("=> Relay_SetHostApp");
 		rv = Relay_SetHostApp(&tester);
-		//LOG_TRACE("Relay_SetHostApp: %d", rv);
 
-		//LOG_TRACE("=> Relay_Init");
 		rv = Relay_Init(RELAY_INIT_FLAG_SOCKETS | RELAY_INIT_FLAG_SSL);
-		//LOG_TRACE("Relay_Init: %d", rv);
 		if(rv < 0) {
 			break;
 		}
 
 		struct relay_connection_t* relay = nullptr;
 		rv = RelayConnection_Create(&relay, relayIP, relayPort);
-		//LOG_TRACE("RelayConnection_Create: %d", rv);
 		if(rv == 0) {
-			LOG_TRACE("=> RelayConnection_Start");
 			rv = RelayConnection_Start(relay);
-			LOG_TRACE("RelayConnection_Start: %d", rv);
 
 			LOG_TRACE("press 'q' or Ctrl/C to exit");
 			//bool end_loop = false;
@@ -570,12 +497,13 @@ void test(int argc, char** argv) {
 					break;
 
 				HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+				HANDLE evConsoleCtrlC = console_handler_t::ConsoleCtrlCEvent();
 				HANDLE waitables[2] = {
 					hStdin,
-					g_evConsoleCtrlC
+					evConsoleCtrlC
 				};
-
-				DWORD wait = WaitForMultipleObjects(_countof(waitables), &waitables[0],
+				DWORD waitables_count = evConsoleCtrlC != nullptr ? 2 : 1;
+				DWORD wait = WaitForMultipleObjects(waitables_count, &waitables[0],
 					FALSE, INFINITE);
 				if(wait == WAIT_OBJECT_0) {
 					if(console_handler_t::ConsoleStopRequested(hStdin)) {
@@ -611,10 +539,6 @@ void test(int argc, char** argv) {
 	} while(0);
 	LOG_TRACE("rv: %d", rv);
 #endif
-
-#ifdef WIN32
-	g_evConsoleCtrlC.close();
-#endif // WIN32
 
 }
 } // namespace _2
