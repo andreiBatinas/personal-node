@@ -6,20 +6,72 @@
 #include <sys/socket.h>
 #endif
 #include <cassert>
+#include <iostream>
 #include <memory>
 #include <thread>
 
 #include "openssl/ssl.h"
 #include "openssl/err.h"
 #include "logger.h"
+#include "scoped_destruct.h"
 #include "socket.h"
 #include "sockets_runtime.h"
 #include "ssl_connection.h"
 #include "ssl_runtime.h"
 #include "utils.h"
-#if 0
+
 #include "relay_api.h"
-#endif
+
+namespace os {
+class event_t {
+private:
+	HANDLE h_ = nullptr;
+public:
+	event_t() {
+	}
+	~event_t() {
+		close();
+	}
+private:
+	event_t(const event_t&) = delete;
+	event_t(event_t&&) = delete;
+	event_t& operator=(const event_t&) = delete;
+	event_t&& operator=(event_t&&) = delete;
+public:
+	operator bool() const {
+		return is_open();
+	}
+	bool operator !() const {
+		return !is_open();
+	}
+	operator HANDLE() {
+		return h_;
+	}
+	HANDLE* operator&() {
+		return &h_;
+	}
+	bool is_open() const {
+		return h_ != nullptr;
+	}
+	bool create() {
+		assert(h_ == nullptr);
+		if(is_open())
+			return false;
+		h_ = CreateEventA(nullptr, FALSE, FALSE, nullptr);
+		return h_ != nullptr;
+	}
+	void close() {
+		HANDLE h = std::move(h_);
+		if(h != nullptr)
+			CloseHandle(h);
+	}
+	bool set() {
+		if(!is_open())
+			return false;
+		return !!::SetEvent(h_);
+	}
+};
+} // namespace os
 
 namespace tests {
 
@@ -212,13 +264,6 @@ public:
 					break;
 				}
 				LOG_INFO("received data length: %d", payloadLength);
-#if 0
-				std::string strData;
-				for(int c = 0; c < payloadLength; c++) {
-					strData += static_cast<char>(data[c]);
-				}
-				LOG_INFO("data: %s", strData.c_str());
-#endif
 
 				//	get or create the remoteID session
 			} while(0);
@@ -229,32 +274,146 @@ int RelayConnectionStarter::relayPort = -1;
 std::string RelayConnectionStarter::relayIP = "";
 Socket RelayConnectionStarter::sockfd;
 
-BOOL WINAPI ConsoleHandler(DWORD CtrlType) {
-	switch(CtrlType) {
-		case CTRL_C_EVENT:
-		case CTRL_BREAK_EVENT:
-		case CTRL_CLOSE_EVENT:
-		case CTRL_LOGOFF_EVENT:
-		case CTRL_SHUTDOWN_EVENT:
-			RelayConnectionStarter::shutdown();
-			return TRUE;
-		default:
-			return FALSE;
+#ifdef WIN32
+static os::event_t g_evConsoleCtrlC;
+
+struct console_handler_t {
+private:
+	static console_handler_t* self_;
+private:
+	console_handler_t() {
+		SetConsoleCtrlHandler(console_handler_t::Handler, TRUE);
 	}
-}
+	~console_handler_t() {
+		SetConsoleCtrlHandler(console_handler_t::Handler, FALSE);
+	}
+	static BOOL WINAPI Handler(DWORD CtrlType) {
+		switch(CtrlType) {
+			case CTRL_C_EVENT:
+			case CTRL_BREAK_EVENT:
+			case CTRL_CLOSE_EVENT:
+			case CTRL_LOGOFF_EVENT:
+			case CTRL_SHUTDOWN_EVENT:
+				g_evConsoleCtrlC.set();
+				RelayConnectionStarter::shutdown();
+				return TRUE;
+			default:
+				return FALSE;
+		}
+	}
+public:
+	static void init() {
+		if(self_ == nullptr) {
+			self_ = new console_handler_t();
+		}
+	}
+	static void uninit() {
+		if(self_ != nullptr) {
+			delete self_;
+			self_ = nullptr;
+		}
+	}
+	static bool ConsoleStopRequested(HANDLE hStdin) {
+		bool stop_requested = false;
 
-void test() {
-	PROFILE();
-	SetConsoleCtrlHandler(ConsoleHandler, TRUE);
-	RelayConnectionStarter::init("193.29.58.141", 19002);
-	SetConsoleCtrlHandler(ConsoleHandler, FALSE);
-}
-} // namespace _2
-} // tests
+		DWORD cin_events = 0;
+		if(GetNumberOfConsoleInputEvents(hStdin, &cin_events)) {
+			std::vector<INPUT_RECORD> spInBuf(cin_events);
+			DWORD cin_events_read = 0;
+			if(ReadConsoleInput(hStdin, &spInBuf[0], cin_events, &cin_events_read)) {
+				for(DWORD c = 0; c < cin_events; ++c) {
+					if(spInBuf[c].EventType == KEY_EVENT) {
+						const auto key_event = &spInBuf[c].Event.KeyEvent;
+						if(key_event->uChar.AsciiChar == 'q') {
+							stop_requested = true;
+							break;
+						}
+						else if(key_event->bKeyDown &&
+							(key_event->dwControlKeyState & LEFT_CTRL_PRESSED || 
+								key_event->dwControlKeyState & RIGHT_CTRL_PRESSED) &&
+							key_event->wVirtualKeyCode == VK_PAUSE) {
+							stop_requested = true;
+							break;
+						}
+					}
+				}
+			}
+		}
 
-int main(int argc, char** argv) {
-	PROFILE();
+		return stop_requested;
+	}
+};
+console_handler_t* console_handler_t::self_ = nullptr;
+struct scoped_console_handler_t {
+	scoped_console_handler_t() {
+		console_handler_t::init();
+	}
+	~scoped_console_handler_t() {
+		console_handler_t::uninit();
+	}
+};
+#endif // WIN32
 
+
+//	host app
+struct HostApp {
+private:
+	std::atomic<int> ref_;
+	std::atomic<bool> running_ = false;
+
+public:
+	int addRef() {
+		int ref = ++ref_;
+		if(ref == 1) {
+			running_ = true;
+		}
+		return ref;
+	}
+	int release() {
+		int ref = --ref_;
+		if(ref == 0) {
+			running_ = false;
+		}
+		return ref;
+	}
+	void logv(logger::LEVEL level, const char* fmt, va_list ap) {
+		va_list ap2;
+		va_copy(ap2, ap);
+		logger::vlog(level, fmt, ap2);
+		va_end(ap2);
+	}
+	void __cdecl error(const char* fmt, ...) {
+		va_list ap;
+		va_start(ap, fmt);
+		logger::error(fmt, ap);
+		va_end(ap);
+	}
+	void __cdecl warning(const char* fmt, ...) {
+		va_list ap;
+		va_start(ap, fmt);
+		logger::warning(fmt, ap);
+		va_end(ap);
+	}
+	void __cdecl info(const char* fmt, ...) {
+		va_list ap;
+		va_start(ap, fmt);
+		logger::info(fmt, ap);
+		va_end(ap);
+	}
+	void __cdecl trace(const char* fmt, ...) {
+		va_list ap;
+		va_start(ap, fmt);
+		logger::trace(fmt, ap);
+		va_end(ap);
+	}
+	bool running() const {
+		return running_;
+	}
+	void stop() {
+		running_ = false;
+	}
+
+	static void check_break_on_startup(int argc, char** argv) {
 #ifdef WIN32
 #ifdef _DEBUG
 	bool break_on_start = false;
@@ -270,8 +429,200 @@ int main(int argc, char** argv) {
 	}
 #endif // _DEBUG
 #endif // WIN32
+	}
+} g_tester;
 
-	// tests::_1::test();
-	tests::_2::test();
+//	C interface
+static int relay_host_application__addRef(struct relay_host_application_t* host) {
+	if(host == nullptr)
+		return -ENOENT;
+	return g_tester.addRef();
+}
+static int relay_host_application__release(struct relay_host_application_t* host) {
+	if(host == nullptr)
+		return -ENOENT;
+	return g_tester.release();
+}
+static void __cdecl relay_host_application__log(struct relay_host_application_t* host,
+	logger::LEVEL level, const char* fmt, ...) {
+	if(host == nullptr)
+		return;
+
+	va_list ap;
+	va_start(ap, fmt);
+	g_tester.logv(level, fmt, ap);
+	va_end(ap);
+}
+static void __cdecl relay_host_application__error(struct relay_host_application_t* host,
+	const char* fmt, ...) {
+	if(host == nullptr)
+		return;
+
+	va_list ap;
+	va_start(ap, fmt);
+	g_tester.error(fmt, ap);
+	va_end(ap);
+}
+static void __cdecl relay_host_application__warning(struct relay_host_application_t* host,
+	const char* fmt, ...) {
+	if(host == nullptr)
+		return;
+
+	va_list ap;
+	va_start(ap, fmt);
+	g_tester.warning(fmt, ap);
+	va_end(ap);
+}
+static void __cdecl relay_host_application__info(struct relay_host_application_t* host,
+	const char* fmt, ...) {
+	if(host == nullptr)
+		return;
+
+	va_list ap;
+	va_start(ap, fmt);
+	g_tester.info(fmt, ap);
+	va_end(ap);
+}
+static void __cdecl relay_host_application__trace(struct relay_host_application_t* host,
+	const char* fmt, ...) {
+	if(host == nullptr)
+		return;
+
+	va_list ap;
+	va_start(ap, fmt);
+	g_tester.trace(fmt, ap);
+	va_end(ap);
+}
+
+struct relay_host_application_t tester = {
+	&relay_host_application__addRef,
+	&relay_host_application__release,
+	&relay_host_application__log,
+	&relay_host_application__error,
+	&relay_host_application__warning,
+	&relay_host_application__info,
+	&relay_host_application__trace,
+};
+
+void test(int argc, char** argv) {
+	PROFILE();
+
+	HostApp::check_break_on_startup(argc, argv);
+
+#ifdef WIN32
+	g_evConsoleCtrlC.create();
+	scoped_console_handler_t console_handler;
+#endif
+
+	const char* relayIP = "193.29.58.141";
+	int relayPort = 19002;
+
+#if 0
+	RelayConnectionStarter::init(relayIP, relayPort);
+#else
+
+#if 0
+	struct HostApp : public relay_host_application_t {
+	private:
+		std::atomic<int> ref_;
+
+	public:
+		int addRef() {
+			return ++ref_;
+		}
+		int release() {
+			return --ref_;
+		}
+		void log(logger::LEVEL level, const char* fmt, ...) {
+			va_list ap;
+			va_start(ap, fmt);
+			logger::vlog(level, fmt, ap);
+			va_end(ap);
+		}
+	} tester;
+#endif // #if 0
+
+	int rv = 0;
+	do {
+		LOG_TRACE("=> Relay_SetHostApp");
+		rv = Relay_SetHostApp(&tester);
+		//LOG_TRACE("Relay_SetHostApp: %d", rv);
+
+		//LOG_TRACE("=> Relay_Init");
+		rv = Relay_Init(RELAY_INIT_FLAG_SOCKETS | RELAY_INIT_FLAG_SSL);
+		//LOG_TRACE("Relay_Init: %d", rv);
+		if(rv < 0) {
+			break;
+		}
+
+		struct relay_connection_t* relay = nullptr;
+		rv = RelayConnection_Create(&relay, relayIP, relayPort);
+		//LOG_TRACE("RelayConnection_Create: %d", rv);
+		if(rv == 0) {
+			LOG_TRACE("=> RelayConnection_Start");
+			rv = RelayConnection_Start(relay);
+			LOG_TRACE("RelayConnection_Start: %d", rv);
+
+			LOG_TRACE("press 'q' or Ctrl/C to exit");
+			//bool end_loop = false;
+			for(;;) {
+				if(!g_tester.running())
+					break;
+
+				HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+				HANDLE waitables[2] = {
+					hStdin,
+					g_evConsoleCtrlC
+				};
+
+				DWORD wait = WaitForMultipleObjects(_countof(waitables), &waitables[0],
+					FALSE, INFINITE);
+				if(wait == WAIT_OBJECT_0) {
+					if(console_handler_t::ConsoleStopRequested(hStdin)) {
+						g_tester.stop();
+						break;
+					}
+				}
+				else if(wait == WAIT_OBJECT_0 + 1) {
+					//	console break
+					g_tester.stop();
+					break;
+				}
+				else {
+					LOG_TRACE("WaitForMultipleObjects: %lu", GetLastError());
+				}
+			}
+
+			LOG_TRACE("=> RelayConnection_Stop");
+			rv = RelayConnection_Stop(relay);
+			LOG_TRACE("RelayConnection_Stop: %d", rv);
+
+			RelayConnection_Destroy(relay);
+		}
+
+		LOG_TRACE("=> Relay_Shutdown");
+		rv = Relay_Shutdown();
+		LOG_TRACE("Relay_Shutdown: %d", rv);
+
+		LOG_TRACE("=> Relay_SetHostApp");
+		rv = Relay_SetHostApp(nullptr);
+		LOG_TRACE("Relay_SetHostApp: %d", rv);
+
+	} while(0);
+	LOG_TRACE("rv: %d", rv);
+#endif
+
+#ifdef WIN32
+	g_evConsoleCtrlC.close();
+#endif // WIN32
+
+}
+} // namespace _2
+} // tests
+
+int main(int argc, char** argv) {
+	PROFILE();
+
+	tests::_2::test(argc, argv);
 	return 0;
 }

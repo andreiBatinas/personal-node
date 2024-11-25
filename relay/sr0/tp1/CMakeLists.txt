@@ -4,7 +4,7 @@
 include(ExternalProject)
 
 # Add source to this project's executable.
-add_executable (tp1 "tp1.cpp" "tp1.h" "logger.h" "logger.cpp" "sockets_runtime.h" "sockets_runtime.cpp" "scoped_destruct.h" "scoped_destruct.cpp" "ssl_runtime.cpp" "ssl_runtime.h" "relay_api.h" "relay_starter.cpp" "relay_api.cpp" "relay_starter.h" "utils.cpp" "utils.h" "socket.h" "socket.cpp" "ssl_connection.h" "ssl_connection.cpp")
+add_executable (tp1 "tp1.cpp" "tp1.h" "logger.h" "logger.cpp" "sockets_runtime.h" "sockets_runtime.cpp" "scoped_destruct.h" "scoped_destruct.cpp" "ssl_runtime.cpp" "ssl_runtime.h" "relay_api.h" "relay_starter.cpp" "relay_api.cpp" "relay_starter.h" "utils.cpp" "utils.h" "socket.h" "socket.cpp" "ssl_connection.h" "ssl_connection.cpp" "relay_connection.h" "relay_connection.cpp")
 
 message(STATUS "CMAKE_VERSION: ${CMAKE_VERSION}")
 if (CMAKE_VERSION VERSION_GREATER 3.12)
@@ -55,6 +55,7 @@ endif()
 
 
 # get OpenSSL
+if(false)
 ExternalProject_Add(openssl
   SOURCE_DIR ${OPENSSL_SOURCE_DIR}
   GIT_REPOSITORY https://github.com/openssl/openssl.git
@@ -79,6 +80,7 @@ ExternalProject_Add(openssl
   INSTALL_DIR ${OPENSSL_INSTALL_DIR} 
   BUILD_BYPRODUCTS ${OPENSSL_INSTALL_DIR}/lib/libssl.${OPENSSL_LIBRARY_SUFFIX} ${OPENSSL_INSTALL_DIR}/lib/libcrypto.${OPENSSL_LIBRARY_SUFFIX}
 )
+endif()
 
 add_library(libssl STATIC IMPORTED GLOBAL)
 set_property(TARGET libssl PROPERTY IMPORTED_LOCATION ${OPENSSL_INSTALL_DIR}/lib/libssl.${OPENSSL_LIBRARY_SUFFIX})
