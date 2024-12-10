@@ -521,23 +521,13 @@ void test(int argc, char** argv) {
 				}
 			}
 
-			LOG_TRACE("=> RelayConnection_Stop");
-			rv = RelayConnection_Stop(relay);
-			LOG_TRACE("RelayConnection_Stop: %d", rv);
-
+			RelayConnection_Stop(relay);
 			RelayConnection_Destroy(relay);
 		}
 
-		LOG_TRACE("=> Relay_Shutdown");
-		rv = Relay_Shutdown();
-		LOG_TRACE("Relay_Shutdown: %d", rv);
-
-		LOG_TRACE("=> Relay_SetHostApp");
-		rv = Relay_SetHostApp(nullptr);
-		LOG_TRACE("Relay_SetHostApp: %d", rv);
-
+		Relay_Shutdown();
+		Relay_SetHostApp(nullptr);
 	} while(0);
-	LOG_TRACE("rv: %d", rv);
 #endif
 
 }

@@ -85,6 +85,9 @@ int Relay_Shutdown(
 	void) {
 	PROFILE();
 
+	if(g_hostApp != nullptr)
+		g_hostApp->trace(g_hostApp, "=> Relay_Shutdown");
+
 	uint32_t flags = g_InitFlags.exchange(RELAY_INIT_FLAG_NOT_INIT);
 
 	if(flags & RELAY_INIT_FLAG_SSL) {
@@ -98,6 +101,9 @@ int Relay_Shutdown(
 			g_hostApp->trace(g_hostApp, "=> SocketsRuntime::uninit()");
 		SocketsRuntime::uninit();
 	}
+
+	if(g_hostApp != nullptr)
+		g_hostApp->trace(g_hostApp, "Relay_Shutdown: %d", 0);
 
 	return 0;
 }
